@@ -1,0 +1,15 @@
+{
+  "name": "deepresearch",
+  "version": "1.0.0",
+  "description": "Deep Research agent: FastAPI + claude-agent-sdk + Kimi (Anthropic-compatible) with web search/fetch, PDF reading, interactive React artifacts, and a project-scoped memory stack. This root package only provides esbuild for artifact compilation; the web UI lives in frontend/.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}
