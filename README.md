@@ -8,6 +8,12 @@ Built with **FastAPI** + **[claude-agent-sdk](https://github.com/anthropics/clau
 
 > The agent SDK runs against an Anthropic-compatible API. This project points it at **Kimi (Moonshot)**, but any Anthropic-compatible endpoint can be configured via `.env`.
 
+<p align="center">
+  <img src="assets/screenshots/artifact.png" alt="Deep Research Agent — chat on the left, a live interactive React artifact on the right" width="100%">
+  <br/>
+  <em>Ask on the left; the agent researches, then renders a live, interactive React visualization on the right.</em>
+</p>
+
 ---
 
 ## ✨ Features
@@ -18,6 +24,41 @@ Built with **FastAPI** + **[claude-agent-sdk](https://github.com/anthropics/clau
 - **Project-scoped memory** — after every turn the conversation is segmented by topic, summarized (episodic memory), and mined for facts (mem0-style `ADD`/`UPDATE`/`DELETE`). Retrieval is task-aware and weighted by importance, recency decay, access frequency, category, and optional semantic similarity.
 - **Folders & organization** — group projects into a hierarchical folder tree, or let the agent **suggest** a structure across all your projects and apply it in bulk.
 - **Streaming UI** — chat responses, tool activity, sources, and artifacts stream over SSE in real time.
+
+---
+
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="assets/screenshots/research.png" alt="Autonomous research with a live tool trail and a sources panel"><br/>
+      <sub><b>Autonomous research</b> — a live tool trail (search · fetch · PDF) while the <b>sources panel</b> fills as the agent browses.</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/screenshots/memory.png" alt="Project-scoped memory panel"><br/>
+      <sub><b>Project-scoped memory</b> — semantic / episodic / procedural / preference facts, each with an importance score, editable inline.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="assets/screenshots/organize.png" alt="AI-suggested folder organization modal"><br/>
+      <sub><b>Folders &amp; smart organize</b> — group projects into a folder tree, or let the agent propose a structure and apply it in bulk.</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/screenshots/welcome.png" alt="Welcome screen with sidebar, folders and feature overview"><br/>
+      <sub><b>At a glance</b> — a clean, streaming UI with sidebar projects, a folder tree, and a feature overview.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="assets/screenshots/figures.png" alt="Answer with PDF figures rendered inline alongside the text"><br/>
+      <sub><b>PDF reading with inline figures</b> — the agent reads a paper (text <b>and</b> charts via <code>pdf_vision</code>) and weaves the original figures back into its answer, interleaved with prose and captions.</sub>
+    </td>
+  </tr>
+</table>
+
+> Screenshots are from a self-hosted instance; sample projects are illustrative.
 
 ---
 

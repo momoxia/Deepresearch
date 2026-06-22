@@ -8,6 +8,12 @@
 
 > Agent SDK 运行在 Anthropic 兼容的 API 之上。本项目默认接入 **Kimi（Moonshot）**，但任何 Anthropic 兼容端点都可以在 `.env` 中配置。
 
+<p align="center">
+  <img src="assets/screenshots/artifact.png" alt="Deep Research Agent —— 左侧对话，右侧实时可交互的 React artifact" width="100%">
+  <br/>
+  <em>左侧提问，Agent 完成研究后在右侧实时渲染可交互的 React 可视化。</em>
+</p>
+
 ---
 
 ## ✨ 功能特性
@@ -18,6 +24,41 @@
 - **项目级记忆** —— 每轮对话后按主题分段、生成情景摘要，并抽取事实（mem0 风格的 `ADD`/`UPDATE`/`DELETE`）。检索是任务感知的，并按重要度、时间衰减、访问频率、类别以及可选的语义相似度加权。
 - **文件夹与组织** —— 把项目归入层级文件夹树，或让 Agent 跨所有项目**推荐**一套结构并批量应用。
 - **流式界面** —— 对话回复、工具活动、来源与 artifact 通过 SSE 实时流式呈现。
+
+---
+
+## 📸 界面截图
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="assets/screenshots/research.png" alt="自主研究：实时工具轨迹与来源面板"><br/>
+      <sub><b>自主网络研究</b> —— 实时展示工具轨迹（搜索 · 抓取 · PDF），右侧<b>来源面板</b>随浏览不断填充。</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/screenshots/memory.png" alt="项目级记忆面板"><br/>
+      <sub><b>项目级记忆</b> —— 客观事实 / 对话摘要 / 决策模式 / 个人偏好分层存储，每条带重要度评分，可就地编辑。</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="assets/screenshots/organize.png" alt="AI 智能整理文件夹弹窗"><br/>
+      <sub><b>文件夹与智能整理</b> —— 把项目归入文件夹树，或让 Agent 推荐一套结构并批量应用。</sub>
+    </td>
+    <td width="50%">
+      <img src="assets/screenshots/welcome.png" alt="欢迎页：侧栏、文件夹与功能概览"><br/>
+      <sub><b>整体一览</b> —— 简洁的流式界面，侧栏项目、文件夹树与功能概览一目了然。</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="assets/screenshots/figures.png" alt="回答中内联渲染 PDF 论文图表，与正文图文混排"><br/>
+      <sub><b>PDF 阅读 · 图文混排</b> —— Agent 阅读论文（正文<b>和</b>图表，经 <code>pdf_vision</code>），把原文图表内联织入回答，与正文、图注交错呈现。</sub>
+    </td>
+  </tr>
+</table>
+
+> 截图来自自部署实例，示例项目仅作演示。
 
 ---
 
