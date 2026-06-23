@@ -5,8 +5,10 @@ PDF 解析 MCP 工具（Hermes 风格：persist full, paginate, grep — no LLM 
   - pdf_grep : 在已缓存的 Markdown 里做正则匹配，返回命中行 + 上下文（用于数值核实）
   - pdf_vision: 从缓存 Markdown 中提取 ![](...) 图片（同 MinerU 源站），用 Kimi Vision 回答「图里有什么」
 """
+import base64
 import hashlib
 import io
+import json
 import logging
 import os
 import re
@@ -64,6 +66,170 @@ def _write_cache(doc_id: str, md_text: str, source_url: str, filename: str) -> N
         f.write(f"source_url: {source_url}\nfilename: {filename}\nchars: {len(md_text)}\n")
 
 
+# ── 图文混排：MinerU 导出的图片落盘 + 安全取图 ─────────────────────────────
+# MinerU /file_parse 在 return_images=true 时返回 results[<pdf>]["images"] =
+# { "<hash>.jpg": "data:image/jpeg;base64,..." }，key 对应 Markdown 里的
+# ![](images/<hash>.jpg)。MinerU 本身不托管图片（直接 GET 会 404），所以必须
+# 在解析时把 base64 解码落盘到 {doc_id}/images/，前端再经 /api/pdf-image 取本地文件。
+# 官方 MinerU 的 RESULT_IMAGE_SUFFIXES = image_suffixes | {"svg"}，导出图可能是 svg。
+_IMG_EXT_OK = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg"}
+_DOC_ID_RE = re.compile(r"^[0-9a-f]{16}$")
+
+
+def _images_dir(doc_id: str) -> str:
+    return os.path.join(_cache_root(), doc_id, "images")
+
+
+def _extract_images(result) -> dict[str, str]:
+    """从 MinerU 响应里收集 {图片名: data-url}，兼容顶层 / results dict / results list。"""
+    images: dict[str, str] = {}
+
+    def _merge(obj) -> None:
+        if isinstance(obj, dict) and isinstance(obj.get("images"), dict):
+            images.update(obj["images"])
+
+    if isinstance(result, dict):
+        _merge(result)
+        results_val = result.get("results")
+        if isinstance(results_val, dict):
+            for v in results_val.values():
+                _merge(v)
+        elif isinstance(results_val, list):
+            for item in results_val:
+                _merge(item)
+    return images
+
+
+def _extract_content_list(result) -> list:
+    """从 MinerU 响应里取 content_list（可能是 JSON 字符串），用于给图片起语义名。"""
+    raw = None
+
+    def _pick(obj):
+        if isinstance(obj, dict):
+            return obj.get("content_list")
+        return None
+
+    if isinstance(result, dict):
+        raw = _pick(result)
+        if raw is None:
+            rv = result.get("results")
+            if isinstance(rv, dict):
+                for v in rv.values():
+                    raw = _pick(v)
+                    if raw is not None:
+                        break
+            elif isinstance(rv, list):
+                for it in rv:
+                    raw = _pick(it)
+                    if raw is not None:
+                        break
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return []
+    return raw if isinstance(raw, list) else []
+
+
+def _build_image_rename_map(content_list: list) -> dict[str, str]:
+    """学 mkp-api：用 content_list 的 page_idx + id 把哈希图名映射成 p{page}_{id}.jpg。
+
+    返回 {MinerU 原始 basename(<hash>.jpg): 语义名 p{page}_{id}.jpg}。id 在每页内唯一，
+    故语义名不冲突；不在 content_list 里的图（未被正文引用）保留原名。
+    """
+    mapping: dict[str, str] = {}
+    for item in content_list or []:
+        if not isinstance(item, dict):
+            continue
+        img_path = item.get("img_path")
+        cid = item.get("id")
+        if not img_path or cid is None:
+            continue
+        base = os.path.basename(img_path)
+        ext = os.path.splitext(base)[1].lower() or ".jpg"
+        mapping[base] = f"p{item.get('page_idx', 0)}_{cid}{ext}"
+    return mapping
+
+
+def _rename_md_images(md_text: str, rename_map: dict[str, str]) -> str:
+    """把 Markdown 里的 images/<hash>.jpg 替换成语义名。basename 为长哈希，直接替换安全。"""
+    for old_base, new_base in rename_map.items():
+        if old_base != new_base:
+            md_text = md_text.replace(old_base, new_base)
+    return md_text
+
+
+def _decode_data_url(data_url: str) -> bytes | None:
+    try:
+        if data_url.startswith("data:"):
+            comma = data_url.find(",")
+            if comma == -1:
+                return None
+            return base64.b64decode(data_url[comma + 1 :])
+        return base64.b64decode(data_url)
+    except Exception:
+        return None
+
+
+def _write_images(
+    doc_id: str, images: dict[str, str], rename_map: dict[str, str] | None = None
+) -> int:
+    """把 {图片名: data-url} 解码落盘到 {doc_id}/images/，返回成功写入的张数。
+
+    rename_map 命中的图改用语义名 p{page}_{id}.jpg 落盘（与改写后的 Markdown 引用一致）。
+    """
+    if not images:
+        return 0
+    rename_map = rename_map or {}
+    out_dir = _images_dir(doc_id)
+    os.makedirs(out_dir, exist_ok=True)
+    written = 0
+    for name, data_url in images.items():
+        src_base = os.path.basename(name or "")
+        if not src_base or src_base in (".", ".."):
+            continue
+        out_base = rename_map.get(src_base, src_base)
+        if os.path.splitext(out_base)[1].lower() not in _IMG_EXT_OK:
+            continue
+        raw = _decode_data_url(data_url) if isinstance(data_url, str) else None
+        if not raw:
+            continue
+        try:
+            with open(os.path.join(out_dir, out_base), "wb") as f:
+                f.write(raw)
+            written += 1
+        except OSError as e:
+            logger.warning("write image %s/%s failed: %s", doc_id, out_base, e)
+    return written
+
+
+def _count_cached_images(doc_id: str) -> int:
+    d = _images_dir(doc_id)
+    if not os.path.isdir(d):
+        return 0
+    return sum(1 for f in os.listdir(d) if os.path.splitext(f)[1].lower() in _IMG_EXT_OK)
+
+
+def resolve_cached_image(doc_id: str, rel_path: str) -> str | None:
+    """把 (doc_id, 相对路径) 解析为已缓存图片的绝对路径；非法或不存在返回 None。
+
+    防路径穿越：realpath 必须落在该 doc 的目录内；限定图片后缀；必须是已存在文件。
+    """
+    if not _DOC_ID_RE.match(doc_id or ""):
+        return None
+    doc_root = os.path.realpath(os.path.join(_cache_root(), doc_id))
+    target = os.path.realpath(os.path.join(doc_root, rel_path or ""))
+    if target != doc_root and not target.startswith(doc_root + os.sep):
+        return None
+    if os.path.splitext(target)[1].lower() not in _IMG_EXT_OK:
+        return None
+    if not os.path.isfile(target):
+        return None
+    return target
+
+
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 _MD_IMAGE_REF = re.compile(r"!\[[^\]]*\]\([^)]+\)")
 
@@ -100,18 +266,22 @@ async def _parse_pdf_bytes(
     lang: str = "ch",
     start_page: int = 0,
     end_page: int = 99999,
-) -> str:
-    """Send PDF bytes to the MinerU parsing service, return Markdown text."""
+) -> tuple[str, dict[str, str], list]:
+    """Send PDF bytes to MinerU, return (Markdown text, {图片名: data-url}, content_list)。"""
     files = [("files", (filename, io.BytesIO(pdf_bytes), "application/pdf"))]
     data = {
         "return_md": "true",
-        "backend": "hybrid-auto-engine",
-        "parse_method": "auto",
-        "formula_enable": "true",
-        "table_enable": "true",
+        "return_images": "true",
+        "return_content_list": "true",
+        "backend": settings.pdf_parse_backend,
+        "parse_method": settings.pdf_parse_method,
+        "formula_enable": str(settings.pdf_parse_formula_enable).lower(),
+        "table_enable": str(settings.pdf_parse_table_enable).lower(),
         "start_page_id": str(start_page),
         "end_page_id": str(end_page),
     }
+    if settings.pdf_parse_server_url:
+        data["server_url"] = settings.pdf_parse_server_url
     if lang:
         data["lang_list"] = lang
 
@@ -144,8 +314,8 @@ async def _parse_pdf_bytes(
             md_text = "\n\n".join(p for p in parts if p)
         if not md_text:
             md_text = str(result)[:8000]
-        return md_text
-    return str(result)[:8000]
+        return md_text, _extract_images(result), _extract_content_list(result)
+    return str(result)[:8000], {}, []
 
 
 def _build_persisted_block(
@@ -162,6 +332,15 @@ def _build_persisted_block(
     outline_block = "\n".join(outline) if outline else "（未检测到 Markdown 标题）"
     fetch_time = datetime.now(_CST).strftime("%Y-%m-%d %H:%M UTC+8")
 
+    img_count = _count_cached_images(doc_id)
+    figure_line = (
+        f"  • 本文档已缓存 {img_count} 张论文原图。讲解时可用 "
+        f"`[figure:{doc_id}:images/<文件名>|图注]` 把图嵌进正文——"
+        f"**仅限 pdf_read 原文里真实出现过的 `![](images/...)` 路径**。\n"
+        if img_count
+        else ""
+    )
+
     return (
         f"<persisted-pdf>\n"
         f"**来源**: {source_url}\n"
@@ -176,6 +355,7 @@ def _build_persisted_block(
         f"  • `pdf_read(doc_id=\"{doc_id}\", offset=<char>, limit=<chars>)` —— 按字符分页读取\n"
         f"  • `pdf_grep(doc_id=\"{doc_id}\", pattern=<regex>, context=3)` —— 定位精确字符串/数字\n"
         f"  • `pdf_vision(doc_id=\"{doc_id}\", question=\"...\")` —— 图表/截图在 Markdown 中以图片形式存在时，用多模态阅读（仅同源的 MinerU 图片 URL 或 data:image）\n"
+        f"{figure_line}"
         f"**引用论文数值前，必须先 grep 命中原文行；命中不到则必须标注「未在原文核实」。**\n"
         f"</persisted-pdf>"
     )
@@ -251,7 +431,7 @@ async def pdf_parse(args: dict) -> dict:
     logger.info("PDF downloaded: %s (%.1f MB), sending to parser...", filename, size_mb)
 
     try:
-        md_text = await _parse_pdf_bytes(
+        md_text, images, content_list = await _parse_pdf_bytes(
             pdf_bytes,
             filename=filename,
             lang=lang,
@@ -264,10 +444,21 @@ async def pdf_parse(args: dict) -> dict:
     if not md_text or len(md_text.strip()) < 20:
         return {"content": [{"type": "text", "text": f"PDF 解析结果为空，可能是扫描件或加密文件。\nURL: {url}"}]}
 
+    # 学 mkp-api：用 content_list 把哈希图名映射成 p{page}_{id}.jpg，正文引用与落盘同步改名。
+    rename_map = _build_image_rename_map(content_list)
+    md_text = _rename_md_images(md_text, rename_map)
+
     try:
         _write_cache(doc_id, md_text, url, filename)
     except Exception as e:
         logger.warning("Failed to write PDF cache for %s: %s", doc_id, e)
+
+    try:
+        n_img = _write_images(doc_id, images, rename_map)
+        if n_img:
+            logger.info("PDF images cached: %s (%d imgs)", doc_id, n_img)
+    except Exception as e:
+        logger.warning("Failed to write PDF images for %s: %s", doc_id, e)
 
     block = _build_persisted_block(
         doc_id=doc_id,

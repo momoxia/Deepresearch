@@ -702,6 +702,34 @@ input.org-folder-name:hover { border-color: var(--border); background: var(--bg-
   margin: 8px 0;
 }
 
+/* 图文混排：[figure:doc:path|caption] 渲染出的论文原图 */
+.pdf-figure {
+  margin: 12px 0;
+  text-align: center;
+}
+.pdf-figure img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: #fff;
+}
+.pdf-figure figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.pdf-figure-failed {
+  margin: 12px 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  text-align: center;
+}
+
 /* KaTeX (remark-math + rehype-katex): theme text + horizontal scroll for wide equations */
 .message-body .katex,
 .streaming-text .katex,

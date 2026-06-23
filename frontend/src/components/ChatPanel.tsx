@@ -8,18 +8,31 @@ import ArtifactCard from "./ArtifactCard";
 import type { ChatMessage, ToolActivity, TaskActivity } from "../types";
 import { formatZhWallClock } from "../time";
 
-const ARTIFACT_MARKER = /\[artifact:([a-f0-9]{6,})\]/g;
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
-function renderWithArtifacts(content: string) {
-  ARTIFACT_MARKER.lastIndex = 0;
-  const parts: Array<{ kind: "text"; text: string } | { kind: "artifact"; id: string }> = [];
+// 单次扫描同时识别 [artifact:ID] 与 [figure:doc:path|caption] 两类行内占位符。
+const CONTENT_MARKER =
+  /\[artifact:([a-f0-9]{6,})\]|\[figure:([0-9a-f]{16}):([^\]|]+?)(?:\|([^\]]*))?\]/g;
+
+type ContentPart =
+  | { kind: "text"; text: string }
+  | { kind: "artifact"; id: string }
+  | { kind: "figure"; doc: string; path: string; caption: string };
+
+function renderWithArtifacts(content: string): ContentPart[] {
+  CONTENT_MARKER.lastIndex = 0;
+  const parts: ContentPart[] = [];
   let cursor = 0;
   let m: RegExpExecArray | null;
-  while ((m = ARTIFACT_MARKER.exec(content)) !== null) {
+  while ((m = CONTENT_MARKER.exec(content)) !== null) {
     if (m.index > cursor) {
       parts.push({ kind: "text", text: content.slice(cursor, m.index) });
     }
-    parts.push({ kind: "artifact", id: m[1] });
+    if (m[1]) {
+      parts.push({ kind: "artifact", id: m[1] });
+    } else {
+      parts.push({ kind: "figure", doc: m[2], path: m[3], caption: (m[4] ?? "").trim() });
+    }
     cursor = m.index + m[0].length;
   }
   if (cursor < content.length) {
@@ -27,6 +40,28 @@ function renderWithArtifacts(content: string) {
   }
   if (parts.length === 0) parts.push({ kind: "text", text: content });
   return parts;
+}
+
+function PdfFigure({ doc, path, caption }: { doc: string; path: string; caption: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="pdf-figure pdf-figure-failed">
+        🖼️ 图片暂不可用{caption ? `：${caption}` : ""}
+      </div>
+    );
+  }
+  return (
+    <figure className="pdf-figure">
+      <img
+        src={`${API_BASE}/api/pdf-image/${doc}/${path}`}
+        alt={caption || "论文配图"}
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+      {caption ? <figcaption>{caption}</figcaption> : null}
+    </figure>
+  );
 }
 
 interface ContentWithArtifactsProps {
@@ -43,15 +78,21 @@ function ContentWithArtifacts({
   const parts = renderWithArtifacts(content);
   return (
     <>
-      {parts.map((p, i) =>
-        p.kind === "artifact" ? (
-          <ArtifactCard
-            key={`a-${p.id}-${i}`}
-            artifactId={p.id}
-            isOpen={openArtifactId === p.id}
-            onOpen={onOpenArtifact}
-          />
-        ) : (
+      {parts.map((p, i) => {
+        if (p.kind === "artifact") {
+          return (
+            <ArtifactCard
+              key={`a-${p.id}-${i}`}
+              artifactId={p.id}
+              isOpen={openArtifactId === p.id}
+              onOpen={onOpenArtifact}
+            />
+          );
+        }
+        if (p.kind === "figure") {
+          return <PdfFigure key={`f-${i}`} doc={p.doc} path={p.path} caption={p.caption} />;
+        }
+        return (
           <Fragment key={`t-${i}`}>
             <ReactMarkdown
               remarkPlugins={markdownRemarkPlugins}
@@ -60,8 +101,8 @@ function ContentWithArtifacts({
               {p.text || " "}
             </ReactMarkdown>
           </Fragment>
-        ),
-      )}
+        );
+      })}
     </>
   );
 }

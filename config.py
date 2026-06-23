@@ -37,6 +37,15 @@ class Settings(BaseSettings):
         default="http://127.0.0.1:8000/file_parse",
         alias="PDF_PARSE_URL",
     )
+    # MinerU /file_parse 后端选择，按部署而定（不同实例配置的本地模型/能力不同）：
+    #   pipeline / hybrid-auto-engine / vlm-auto-engine —— 用本地模型
+    #   hybrid-http-client / vlm-http-client —— 把 VLM 推理外包给 server_url（需服务端允许）
+    pdf_parse_backend: str = Field(default="hybrid-auto-engine", alias="PDF_PARSE_BACKEND")
+    pdf_parse_method: str = Field(default="auto", alias="PDF_PARSE_METHOD")
+    # 仅 *-http-client 后端需要：openai 兼容的 VLM 服务地址；留空则不下发。
+    pdf_parse_server_url: str = Field(default="", alias="PDF_PARSE_SERVER_URL")
+    pdf_parse_formula_enable: bool = Field(default=True, alias="PDF_PARSE_FORMULA_ENABLE")
+    pdf_parse_table_enable: bool = Field(default=True, alias="PDF_PARSE_TABLE_ENABLE")
     pdf_cache_dir: str = Field(
         default="./data/pdf_cache",
         alias="PDF_CACHE_DIR",

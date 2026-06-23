@@ -7,7 +7,7 @@ from db.database import init_db
 
 configure_kimi_env()
 
-from api.routes import artifacts, chat, folders, projects  # noqa: E402
+from api.routes import artifacts, chat, folders, pdf_images, projects  # noqa: E402
 
 app = FastAPI(
     title=settings.app_title,
@@ -28,6 +28,7 @@ app.add_middleware(
 app.include_router(projects.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(artifacts.router, prefix="/api")
+app.include_router(pdf_images.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
 
 
